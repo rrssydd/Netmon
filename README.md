@@ -10,6 +10,18 @@ Persyaratan: Python 3.11 atau lebih baru. Buka PowerShell di folder tempat Netmo
     cd Netmon
     setup_windows.bat
 
+`setup_windows.bat` membuat virtual environment `.venv` dan memasang dependensi dari `requirements.txt` secara otomatis. Jika ingin menjalankan proses instalasi secara manual, gunakan:
+
+    py -3 -m venv .venv
+    .\.venv\Scripts\Activate.ps1
+    python -m pip install --upgrade pip
+    pip install -r requirements.txt
+
+Jika PowerShell memblokir aktivasi virtual environment, lewati perintah aktivasi dan gunakan:
+
+    .\.venv\Scripts\python.exe -m pip install --upgrade pip
+    .\.venv\Scripts\python.exe -m pip install -r requirements.txt
+
 Setelah setup selesai, jalankan:
 
     start_windows.bat
