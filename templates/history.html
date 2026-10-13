@@ -1,0 +1,97 @@
+{% extends 'base.html' %}
+{% block title %}History & Trend · Netmon{% endblock %}
+{% block crumb %}History & Trend{% endblock %}
+{% block head %}
+<script src="{{ url_for('static',filename='chart.umd.js') }}" defer></script>
+<script src="{{ url_for('static',filename='charts.js') }}" defer></script>
+<script src="{{ url_for('static',filename='history.js') }}" defer></script>
+{% endblock %}
+{% block content %}
+<div class="page-heading">
+  <div>
+    <span class="eyebrow">NETWORK HISTORY</span>
+    <h1>History & Trend</h1>
+    <p>Bandingkan data yang tercatat. Klik perangkat atau uplink untuk membuka grafik tepat di bawah barisnya; klik lagi untuk menutup.</p>
+  </div>
+  <div class="range-control">
+    <label for="history-days">Rentang waktu</label>
+    <select id="history-days">
+      <option value="1">24 jam terakhir</option>
+      <option value="7" selected>7 hari terakhir</option>
+      <option value="14">14 hari terakhir</option>
+      <option value="30">30 hari terakhir</option>
+    </select>
+  </div>
+</div>
+{% if entities %}
+<section id="history-dashboard" data-selected-label="{{ selected_label or '' }}" data-wan-limit="{{ wan_limit }}">
+  <div class="history-toolbar">
+    <div class="filter-tabs" role="group" aria-label="Jenis data">
+      <button type="button" class="filter-tab active" data-history-filter="all" aria-pressed="true">Semua <span>{{ entities|length }}</span></button>
+      <button type="button" class="filter-tab" data-history-filter="wan" aria-pressed="false">WAN & uplink <span>{{ wan_count }}</span></button>
+      <button type="button" class="filter-tab" data-history-filter="device" aria-pressed="false">Router & switch <span>{{ device_count }}</span></button>
+    </div>
+    <div class="history-search">
+      <label class="sr-only" for="history-search">Cari perangkat atau uplink</label>
+      <input id="history-search" type="search" placeholder="Cari perangkat atau uplink…">
+    </div>
+  </div>
+  <p class="history-policy"><strong>Batas bandwidth {{ wan_limit }} Mbps</strong> hanya berlaku untuk WAN & uplink. History router/switch menampilkan CPU dan memory tanpa batas bandwidth. Peak dihitung dari snapshot tersimpan pada rentang yang dipilih; traffic interface adalah rata-rata 5 menit, bukan puncak sesaat.</p>
+  <p id="history-overview-message" class="history-overview-message muted" aria-live="polite">Memuat ringkasan history…</p>
+  <div class="table-scroll history-summary-scroll">
+    <table class="history-summary-table">
+      <thead>
+        <tr>
+          <th>Jenis</th>
+          <th>Perangkat / uplink</th>
+          <th>Data terbaru</th>
+          <th>Peak (Input / CPU)</th>
+          <th>Peak (Output / Memory)</th>
+          <th>Sampel</th>
+          <th>Status bandwidth</th>
+        </tr>
+      </thead>
+      <tbody id="history-summary-rows">
+      {% for e in entities %}
+        <tr data-history-row data-label="{{ e.entity_label }}" data-type="{{ e.entity_type }}">
+          <td><span class="history-kind {{ e.entity_type }}">{{ 'WAN / uplink' if e.entity_type == 'wan' else 'Router / switch' }}</span></td>
+          <td><button type="button" class="history-row-select" data-history-select aria-controls="history-detail" aria-expanded="false">{{ e.entity_label }}</button></td>
+          <td><div class="history-summary-pair"><span><small data-latest-first-label>—</small><strong data-latest-first>—</strong></span><span><small data-latest-second-label>—</small><strong data-latest-second>—</strong></span></div><small class="history-time" data-latest-time>—</small></td>
+          <td><small class="history-metric-label" data-peak-first-label>—</small><strong data-peak-first>—</strong><small class="history-time" data-peak-first-time>—</small></td>
+          <td><small class="history-metric-label" data-peak-second-label>—</small><strong data-peak-second>—</strong><small class="history-time" data-peak-second-time>—</small></td>
+          <td data-sample-count>—</td>
+          <td><span class="history-bandwidth-status" data-bandwidth-status>—</span></td>
+        </tr>
+      {% endfor %}
+        <tr id="history-detail-row" class="history-detail-row" hidden>
+          <td colspan="7">
+            <section class="history-detail panel" id="history-detail">
+              <div class="panel-heading">
+                <div><span class="eyebrow">DETAIL RENTANG TERPILIH</span><h2 id="history-title">Pilih perangkat atau uplink</h2><p id="history-period">—</p></div>
+                <span id="history-unit" class="tag"></span>
+              </div>
+              <div class="detail-stats">
+                <div><span id="first-metric-label">Metric 1</span><strong id="first-metric-latest">—</strong><small id="first-metric-summary">Rata-rata — · Min — · Peak —</small></div>
+                <div><span id="second-metric-label">Metric 2</span><strong id="second-metric-latest">—</strong><small id="second-metric-summary">Rata-rata — · Min — · Peak —</small></div>
+                <div><span>Jumlah sampel</span><strong id="history-samples">—</strong><small>Catatan valid dalam rentang terpilih</small></div>
+              </div>
+              <div class="history-body">
+                <div class="chart-wrap history-chart"><canvas id="history-chart" role="img" aria-label="Grafik history terpilih"></canvas></div>
+                <p class="chart-message muted" id="history-message" aria-live="polite">Pilih perangkat atau uplink untuk memuat grafik.</p>
+              </div>
+              <details class="history-records">
+                <summary>10 catatan terakhir</summary>
+                <div class="table-scroll"><table><thead><tr><th>Waktu</th><th id="record-first-label">Metric 1</th><th id="record-second-label">Metric 2</th><th>Sumber</th></tr></thead><tbody id="history-record-rows"></tbody></table></div>
+              </details>
+            </section>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <div id="history-no-match" class="panel empty" hidden>Tidak ada data yang cocok. Ubah pencarian atau filter.</div>
+</section>
+{% else %}
+<div class="panel empty"><h3>Belum ada perangkat atau history</h3><p>Tambahkan perangkat, lalu jalankan Collect atau import capture.</p><a class="button" href="{{ url_for('devices') }}">Tambah perangkat</a></div>
+{% endif %}
+{% endblock %}

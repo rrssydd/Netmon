@@ -218,3 +218,22 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Netmon local databases, credentials, history, captures, and session key
+*.db
+*.sqlite
+*.sqlite3
+.session_key
+
+# Local secrets and configuration
+.env.*
+!.env.example
+config/*
+!config/thresholds.yaml
+
+# Runtime folders and output
+instance/
+data/
+captures/
+backups/
+*.log
