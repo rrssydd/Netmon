@@ -19,8 +19,9 @@ _SECTION_HINT_RE = re.compile(r"^-{2,}\s*(?P<hint>.+?)\s*-{2,}$")
 def split_capture(text: str) -> list:
     """Returns a list of dicts: {host, command, raw, section_hint}.
     section_hint is the nearest preceding '---Some Label---' divider
-    line, if any (your sample log uses these, e.g. '---To-Internet-CBN---') —
-    handy as a suggestion when filling in config/capture_map.yaml."""
+    line, if any (for example, '---WAN-PRIMARY---'). The hint is generic
+    metadata; actual WAN matching uses the hostname and interface mappings
+    configured by the operator in the local inventory."""
     matches = list(_PROMPT_RE.finditer(text))
     blocks = []
     current_hint = None

@@ -7,15 +7,21 @@
 <script src="{{ url_for('static',filename='history.js') }}" defer></script>
 {% endblock %}
 {% block content %}
-<div class="page-heading">
+<div class="page-heading history-page-heading">
   <div>
     <span class="eyebrow">NETWORK HISTORY</span>
     <h1>History & Trend</h1>
     <p>Bandingkan data yang tercatat. Klik perangkat atau uplink untuk membuka grafik tepat di bawah barisnya; klik lagi untuk menutup.</p>
   </div>
   <div class="range-control">
-    <label for="history-days">Rentang waktu</label>
-    <select id="history-days">
+    <label id="history-range-label">Rentang waktu</label>
+    <div class="history-range-picker" role="group" aria-labelledby="history-range-label">
+      <button type="button" data-history-range="1" aria-pressed="false" title="24 jam terakhir">24 jam</button>
+      <button type="button" data-history-range="7" aria-pressed="true" title="7 hari terakhir">7 hari</button>
+      <button type="button" data-history-range="14" aria-pressed="false" title="14 hari terakhir">14 hari</button>
+      <button type="button" data-history-range="30" aria-pressed="false" title="30 hari terakhir">30 hari</button>
+    </div>
+    <select id="history-days" hidden aria-hidden="true" tabindex="-1">
       <option value="1">24 jam terakhir</option>
       <option value="7" selected>7 hari terakhir</option>
       <option value="14">14 hari terakhir</option>
@@ -24,7 +30,7 @@
   </div>
 </div>
 {% if entities %}
-<section id="history-dashboard" data-selected-label="{{ selected_label or '' }}" data-wan-limit="{{ wan_limit }}">
+<section id="history-dashboard" data-selected-label="{{ selected_label or '' }}" data-wan-limit="{{ wan_limit }}" data-cpu-warning="{{ cpu_warning }}" data-cpu-critical="{{ cpu_critical }}" data-mem-warning="{{ mem_warning }}" data-mem-critical="{{ mem_critical }}">
   <div class="history-toolbar">
     <div class="filter-tabs" role="group" aria-label="Jenis data">
       <button type="button" class="filter-tab active" data-history-filter="all" aria-pressed="true">Semua <span>{{ entities|length }}</span></button>
@@ -36,7 +42,7 @@
       <input id="history-search" type="search" placeholder="Cari perangkat atau uplink…">
     </div>
   </div>
-  <p class="history-policy"><strong>Batas bandwidth {{ wan_limit }} Mbps</strong> hanya berlaku untuk WAN & uplink. History router/switch menampilkan CPU dan memory tanpa batas bandwidth. Peak dihitung dari snapshot tersimpan pada rentang yang dipilih; traffic interface adalah rata-rata 5 menit, bukan puncak sesaat.</p>
+  <p class="history-policy"><strong>Batas bandwidth {{ wan_limit }} Mbps</strong> berlaku untuk WAN & uplink. Status router/switch mengikuti ambang CPU dan memory; perangkat tidak dibandingkan dengan batas bandwidth. Peak dihitung dari snapshot tersimpan pada rentang yang dipilih; traffic interface adalah rata-rata 5 menit, bukan puncak sesaat.</p>
   <p id="history-overview-message" class="history-overview-message muted" aria-live="polite">Memuat ringkasan history…</p>
   <div class="table-scroll history-summary-scroll">
     <table class="history-summary-table">
@@ -48,7 +54,7 @@
           <th>Peak (Input / CPU)</th>
           <th>Peak (Output / Memory)</th>
           <th>Sampel</th>
-          <th>Status bandwidth</th>
+          <th>Status</th>
         </tr>
       </thead>
       <tbody id="history-summary-rows">

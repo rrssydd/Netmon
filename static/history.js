@@ -3,12 +3,19 @@
 const historyDashboard=document.getElementById('history-dashboard');
 const historyRows=Array.from(document.querySelectorAll('[data-history-row]'));
 const historyCache=new Map();
-let selectedHistoryRow=null,detailChart=null,historyGeneration=0,detailGeneration=0,historyFilter='all';
+let selectedHistoryRow=null,detailChart=null,detailRenderedRow=null,historyGeneration=0,detailGeneration=0,historyFilter='all';
 const historyDays=document.getElementById('history-days');
+const historyRangeButtons=Array.from(document.querySelectorAll('[data-history-range]'));
 const historySearch=document.getElementById('history-search');
 const historyDetail=document.getElementById('history-detail');
 const historyDetailRow=document.getElementById('history-detail-row');
 const wanLimit=Number(historyDashboard?.dataset.wanLimit||300);
+const deviceLimits={
+ cpuWarning:Number(historyDashboard?.dataset.cpuWarning||80),
+ cpuCritical:Number(historyDashboard?.dataset.cpuCritical||90),
+ memWarning:Number(historyDashboard?.dataset.memWarning||80),
+ memCritical:Number(historyDashboard?.dataset.memCritical||90),
+};
 const historyText=(id,text)=>{const element=document.getElementById(id);if(element)element.textContent=text};
 const historyStamp=stamp=>stamp?stamp.replace('T',' '):'—';
 const historyValue=(value,type)=>typeof value==='number'&&Number.isFinite(value)
@@ -36,6 +43,15 @@ function summaryPeak(summary,type){
  return values.length?Math.max(...values):null;
 }
 
+function deviceHealthState(summary){
+ if(!summary?.sample_count)return 'unknown';
+ const cpu=summary.latest?.cpu_max,mem=summary.latest?.mem_pct;
+ if(!Number.isFinite(cpu)||!Number.isFinite(mem))return 'unknown';
+ if(cpu>=deviceLimits.cpuCritical||mem>=deviceLimits.memCritical)return 'critical';
+ if(cpu>=deviceLimits.cpuWarning||mem>=deviceLimits.memWarning)return 'warning';
+ return 'normal';
+}
+
 function renderSummaryRow(row,summary){
  const type=row.dataset.type,fields=historyFields(type),hasData=Boolean(summary?.sample_count);
  fields.forEach((field,index)=>{
@@ -57,8 +73,10 @@ function renderSummaryRow(row,summary){
   status.textContent=labels[state];
   status.className=`history-bandwidth-status ${state}`;
  }else{
-  status.textContent='Tidak dinilai';
-  status.className='history-bandwidth-status not-applicable';
+  const state=deviceHealthState(summary);
+  const labels={normal:'Normal',warning:'Warning',critical:'Critical',unknown:hasData?'Data belum lengkap':'Belum ada data'};
+  status.textContent=labels[state];
+  status.className=`history-bandwidth-status ${state}`;
  }
  row.dataset.peak=summaryPeak(summary,type)??'';
  row.dataset.loaded=hasData?'true':'false';
@@ -76,10 +94,19 @@ function sortSummaryRows(){
   }
   return a.dataset.label.localeCompare(b.dataset.label,'id');
  });
+ const detailVisible=!historyDetailRow.hidden;
+ const movingRows=detailVisible?[...historyRows,historyDetailRow]:historyRows;
+ const oldPositions=new Map(movingRows.map(row=>[row,row.getBoundingClientRect().top]));
  historyDetailRow.remove();
  ordered.forEach(row=>body.appendChild(row));
  if(selectedHistoryRow)selectedHistoryRow.after(historyDetailRow);
  else body.appendChild(historyDetailRow);
+ if(!window.matchMedia('(prefers-reduced-motion: reduce)').matches){
+  for(const row of movingRows){
+   const oldTop=oldPositions.get(row),newTop=row.getBoundingClientRect().top,delta=oldTop-newTop;
+   if(Math.abs(delta)>1)row.animate([{transform:`translateY(${delta}px)`},{transform:'translateY(0)'}],{duration:280,easing:'cubic-bezier(.22,.8,.25,1)'});
+  }
+ }
 }
 
 function filterHistoryRows(){
@@ -105,13 +132,7 @@ async function loadHistorySummary(){
  const generation=++historyGeneration;
  historyCache.clear();
  detailGeneration++;
- historyText('history-overview-message','Mengambil ringkasan history…');
- for(const row of historyRows){
-  row.dataset.loaded='false';row.dataset.peak='';
-  for(const selector of ['[data-latest-first]','[data-latest-second]','[data-peak-first]','[data-peak-second]','[data-latest-time]','[data-peak-first-time]','[data-peak-second-time]'])setRowCell(row,selector,'—');
-  setRowCell(row,'[data-sample-count]','—');
-  const status=row.querySelector('[data-bandwidth-status]');status.textContent='Memuat…';status.className='history-bandwidth-status';
- }
+ historyDashboard.setAttribute('aria-busy','true');
  try{
   const summaries=await fetchJson('/api/history-summary?days='+historyDays.value);
   if(generation!==historyGeneration)return;
@@ -119,12 +140,14 @@ async function loadHistorySummary(){
   for(const row of historyRows)renderSummaryRow(row,summaryMap.get(row.dataset.type+'\u0000'+row.dataset.label)||null);
   sortSummaryRows();
   const loaded=summaries.length;
-  historyText('history-overview-message',`${loaded} perangkat/link memiliki data · rentang ${historyDays.selectedOptions[0].textContent}. Peak WAN dibandingkan dengan batas ${wanLimit} Mbps; router/switch tidak dinilai dengan batas bandwidth.`);
+  historyText('history-overview-message',`${loaded} perangkat/link memiliki data · rentang ${historyDays.selectedOptions[0].textContent}.`);
   if(selectedHistoryRow)renderHistoryDetail();
  }catch(error){
   if(generation!==historyGeneration)return;
   historyText('history-overview-message',error.message);
   if(selectedHistoryRow)renderHistoryDetail();
+ }finally{
+  if(generation===historyGeneration)historyDashboard.setAttribute('aria-busy','false');
  }
 }
 
@@ -149,11 +172,12 @@ function renderDetailPoints(row,points){
  });
  removeHistoryChart(detailChart);
  detailChart=makeChart(document.getElementById('history-chart'),points,type,false,{wanLimit:type==='wan'?wanLimit:null});
+ detailRenderedRow=row;
  let message;
  if(!points.length)message='Belum ada catatan pada rentang waktu ini.';
  else if(!validPoints.length)message='Data penggunaan belum berhasil terbaca.';
- else if(type==='wan')message=`Garis putus-putus menunjukkan batas bandwidth ${wanLimit} Mbps. Peak adalah sampel tertinggi yang tersimpan; rate interface Cisco merupakan rata-rata 5 menit, bukan puncak sesaat.`;
- else message='Ringkasan dihitung dari snapshot dalam rentang terpilih; router/switch tidak memiliki batas bandwidth pada halaman ini.';
+ else if(type==='wan')message=`Garis putus-putus menunjukkan batas bandwidth ${wanLimit} Mbps. Peak dan tooltip memakai sampel asli; kurva hanya dihaluskan untuk tampilan. Rate interface Cisco merupakan rata-rata 5 menit, bukan puncak sesaat.`;
+ else message='Status router/switch mengikuti ambang CPU dan memory; batas bandwidth hanya berlaku untuk WAN/uplink.';
  historyText('history-message',message);
  const fieldsRows=document.getElementById('history-record-rows');fieldsRows.replaceChildren();
  for(const point of points.slice(-10).reverse()){
@@ -173,8 +197,10 @@ async function renderHistoryDetail(){
  const row=selectedHistoryRow;if(!row)return;
  historyDetail.hidden=false;
  historyText('history-title',row.dataset.label);
- historyText('history-period','Memuat rentang terpilih…');
- historyText('history-message','Memuat grafik…');
+ if(detailRenderedRow!==row){
+  historyText('history-period','Memuat rentang terpilih…');
+  historyText('history-message','Memuat grafik…');
+ }
  const cached=historyCache.get(row);
  if(cached){renderDetailPoints(row,cached);return}
  const generation=++detailGeneration;
@@ -203,11 +229,11 @@ function selectHistoryRow(row,updateURL=true){
  if(!row){
   detailGeneration++;
   historyDetailRow.hidden=true;
-  removeHistoryChart(detailChart);detailChart=null;
+  removeHistoryChart(detailChart);detailChart=null;detailRenderedRow=null;
   if(updateURL){const url=new URL(window.location.href);url.searchParams.delete('label');window.history.replaceState(null,'',url)}
   return;
  }
- if(previousRow&&previousRow!==row){removeHistoryChart(detailChart);detailChart=null}
+ if(previousRow&&previousRow!==row){removeHistoryChart(detailChart);detailChart=null;detailRenderedRow=null}
  row.after(historyDetailRow);
  historyDetailRow.hidden=false;
  if(updateURL){const url=new URL(window.location.href);url.searchParams.set('label',row.dataset.label);window.history.replaceState(null,'',url)}
@@ -219,7 +245,20 @@ function selectHistoryRow(row,updateURL=true){
 
 if(historyRows.length){
  for(const row of historyRows)row.querySelector('[data-history-select]').addEventListener('click',()=>selectHistoryRow(row));
- historyDays.addEventListener('change',loadHistorySummary);
+ const rangePicker=document.querySelector('.history-range-picker');
+ const syncHistoryRange=()=>{
+  const selectedIndex=historyRangeButtons.findIndex(button=>button.dataset.historyRange===historyDays.value);
+  const index=Math.max(0,selectedIndex);
+  rangePicker?.style.setProperty('--range-offset',`calc(${index*100}% + ${index*4}px)`);
+  historyRangeButtons.forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.historyRange===historyDays.value)));
+ };
+ historyDays.addEventListener('change',()=>{syncHistoryRange();loadHistorySummary()});
+ historyRangeButtons.forEach(button=>button.addEventListener('click',()=>{
+  if(historyDays.value===button.dataset.historyRange)return;
+  historyDays.value=button.dataset.historyRange;
+  historyDays.dispatchEvent(new Event('change'));
+ }));
+ syncHistoryRange();
  historySearch.addEventListener('input',filterHistoryRows);
  document.querySelectorAll('[data-history-filter]').forEach(button=>button.addEventListener('click',()=>{
   historyFilter=button.dataset.historyFilter;

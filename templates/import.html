@@ -1,8 +1,148 @@
-{% extends 'base.html' %}{% block title %}Import Capture · Netmon{% endblock %}{% block crumb %}Import Capture{% endblock %}
-{% block content %}<div class="page-heading"><div><span class="eyebrow">MANUAL COLLECTION</span><h1>Import capture</h1><p>Gunakan output CLI ketika perangkat tidak dapat diakses melalui SSH.</p></div></div>
-<div class="import-layout"><section class="panel upload-panel"><h2>Upload capture CLI</h2><form method="post" enctype="multipart/form-data">{{ csrf() }}<div class="upload-control"><input id="capture_file" class="capture-file-input" name="capture_file" type="file" accept=".txt,text/plain" required aria-describedby="file-name upload-note"><label class="dropzone" id="dropzone" for="capture_file"><span class="upload-icon">{{ icon('import') }}</span><strong>Letakkan capture di sini</strong><span id="upload-note">File .txt · maksimal 5 MB</span><span class="file-picker-button">Pilih file dari komputer <span aria-hidden="true">↗</span></span></label></div><div class="upload-selection"><span class="file-type-badge" aria-hidden="true">TXT</span><div><strong id="file-name" aria-live="polite">Belum ada file dipilih</strong><span id="file-size">Pilih file hasil capture CLI perangkat.</span></div><button type="button" class="text-button" id="clear-capture" hidden>Hapus</button></div><button class="button primary upload-submit">{{ icon('import') }} Import capture</button></form></section><aside class="panel help-panel"><span class="eyebrow">FORMAT CAPTURE</span><h2>Sertakan prompt perangkat</h2><p>Isi Capture Hostname di Add Device & Uplinks sesuai hostname pada file.</p><pre>SW-CORE#show processes cpu
-CPU utilization ...
-SW-CORE#show memory statistics
-Processor ...
-SW-CORE#</pre><p>Output harus lengkap. Untuk traffic, sertakan hasil <code>show interfaces</code> pada interface yang sudah dipetakan.</p></aside></div>
-{% if result %}<section class="panel import-result"><div class="panel-heading"><h2>Hasil import</h2><span class="tag">{{ result.imported|length }} label diperbarui</span></div><p>{{ result.imported|join(', ') if result.imported else 'Tidak ada data yang cocok dengan mapping.' }}</p>{% if result.unmapped %}<div class="table-scroll"><table><thead><tr><th>Hostname belum terpetakan</th><th>Command</th></tr></thead><tbody>{% for b in result.unmapped %}<tr><td>{{ b.host }}</td><td class="mono">{{ b.command }}</td></tr>{% endfor %}</tbody></table></div>{% endif %}</section>{% endif %}{% endblock %}
+{% extends 'base.html' %}
+{% block title %}Import Capture · Netmon{% endblock %}
+{% block crumb %}Import Capture{% endblock %}
+
+{% block content %}
+<div class="page-heading">
+  <div>
+    <span class="eyebrow">MANUAL COLLECTION</span>
+    <h1>Import capture</h1>
+    <p>Gunakan output CLI ketika perangkat tidak dapat diakses melalui SSH.</p>
+  </div>
+</div>
+
+<section class="panel upload-panel">
+  <h2>Upload capture CLI</h2>
+  <form method="post" enctype="multipart/form-data">
+    {{ csrf() }}
+    <div class="upload-control">
+      <input id="capture_file" class="capture-file-input" name="capture_file" type="file" accept=".txt,text/plain" required aria-describedby="file-name upload-note">
+      <label class="dropzone" id="dropzone" for="capture_file">
+        <span class="upload-icon">{{ icon('import') }}</span>
+        <strong>Letakkan capture di sini</strong>
+        <span id="upload-note">File .txt · maksimal 5 MB</span>
+        <span class="file-picker-button">Pilih file dari komputer <span aria-hidden="true">↗</span></span>
+      </label>
+    </div>
+    <div class="upload-selection">
+      <span class="file-type-badge" aria-hidden="true">TXT</span>
+      <div>
+        <strong id="file-name" aria-live="polite">Belum ada file dipilih</strong>
+        <span id="file-size">Pilih file hasil capture CLI perangkat.</span>
+      </div>
+      <button type="button" class="text-button" id="clear-capture" hidden>Hapus</button>
+    </div>
+    <button class="button primary upload-submit">{{ icon('import') }} Import capture</button>
+  </form>
+</section>
+
+<section class="panel capture-template-panel">
+  <div class="capture-template-heading">
+    <div><span class="eyebrow">FORMAT CAPTURE</span><h2>Perintah CLI</h2></div>
+    <p>Salin atau unduh perintah siap tempel ke terminal perangkat.</p>
+  </div>
+  <div class="capture-template-grid">
+    <article class="capture-template-card">
+      <h3>Cisco IOS</h3>
+      <p>Untuk router atau switch Cisco IOS: CPU, memory, dan traffic interface.</p>
+      <div class="template-actions">
+        <button class="button" type="button" data-template-copy="ios-classic">Salin command</button>
+        <button class="button primary" type="button" data-template-download="ios-classic" data-filename="netmon_cisco_ios.txt">Unduh .txt</button>
+        <span class="template-message" data-template-message="ios-classic" aria-live="polite"></span>
+      </div>
+      <pre data-capture-template="ios-classic" hidden>terminal length 0
+show processes cpu | include utilization
+show processes cpu history
+show memory statistics
+show interfaces</pre>
+    </article>
+    <article class="capture-template-card">
+      <h3>Cisco IOS XE</h3>
+      <p>Untuk router ISR/ASR atau switch Catalyst yang menjalankan IOS XE.</p>
+      <div class="template-actions">
+        <button class="button" type="button" data-template-copy="ios-xe">Salin command</button>
+        <button class="button primary" type="button" data-template-download="ios-xe" data-filename="netmon_cisco_ios_xe.txt">Unduh .txt</button>
+        <span class="template-message" data-template-message="ios-xe" aria-live="polite"></span>
+      </div>
+      <pre data-capture-template="ios-xe" hidden>terminal length 0
+show plat soft stat contr br
+show processes cpu | include utilization
+show processes cpu history
+show interfaces</pre>
+    </article>
+  </div>
+  <p class="capture-template-note">Jalankan dari privileged EXEC (prompt <code>#</code>). Untuk IOS XE, command platform bergantung model dan versi. Simpan output terminal lengkap lalu impor file outputnya, bukan file command dari tombol.</p>
+</section>
+
+{% if result %}
+<section class="panel import-result">
+  <div class="panel-heading">
+    <h2>Hasil import</h2>
+    <span class="tag">{{ result.imported|length }} label diperbarui</span>
+  </div>
+
+  {% if result.hostname_mismatches %}
+  <div class="notice info import-host-warning">
+    <strong>Capture Hostname tidak cocok.</strong>
+    <p>Nama pada prompt harus sama persis dengan Capture Hostname di Add Device & Uplinks. Sesuaikan hostname perangkat yang terdaftar atau file capture, lalu impor kembali.</p>
+    <ul>
+      {% for item in result.hostname_mismatches %}
+      <li>Di file: <code>{{ item.captured }}</code>{% if item.suggestion %} · paling mirip dengan: <code>{{ item.suggestion }}</code>{% endif %}</li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+
+  {% if result.details %}
+  <p>Berikut metrik yang berhasil dibaca dari file dan disimpan sebagai sampel capture.</p>
+  <div class="import-detail-list">
+    {% for item in result.details %}
+    <article class="import-detail-card">
+      <div class="import-detail-heading">
+        <div>
+          <span class="tag">{{ item.kind }}</span>
+          <h3>{{ item.label }}</h3>
+          <small>Hostname: <span class="mono">{{ item.hostname }}</span></small>
+        </div>
+        {% if item.link_state %}<span class="badge {{ 'normal' if item.link_state == 'up' else 'warning' }}">{{ item.link_state }} / {{ item.protocol_state or '—' }}</span>{% endif %}
+      </div>
+      <dl class="import-metric-grid">
+        {% if item.kind == 'Perangkat' %}
+        <div><dt>CPU saat capture</dt><dd>{% if item.cpu_current is not none %}{{ item.cpu_current }}%{% else %}Tidak terbaca{% endif %}</dd></div>
+        <div><dt>Peak CPU dari history</dt><dd>{% if item.cpu_peak is not none %}{{ item.cpu_peak }}%{% else %}Tidak tersedia{% endif %}</dd></div>
+        <div><dt>Memory</dt><dd>{% if item.memory_pct is not none %}{{ item.memory_pct }}%{% else %}Tidak terbaca{% endif %}</dd></div>
+        {% else %}
+        <div><dt>Interface</dt><dd class="mono">{{ item.interface or '—' }}</dd></div>
+        <div><dt>Traffic input</dt><dd>{% if item.input_mbps is not none %}{{ item.input_mbps }} Mbps{% else %}Tidak terbaca{% endif %}</dd></div>
+        <div><dt>Traffic output</dt><dd>{% if item.output_mbps is not none %}{{ item.output_mbps }} Mbps{% else %}Tidak terbaca{% endif %}</dd></div>
+        {% endif %}
+      </dl>
+    </article>
+    {% endfor %}
+  </div>
+  <p class="import-result-note">Waktu sampel capture mengikuti waktu file diimpor. Peak Traffic Harian di Overview hanya menghitung sampel SSH live.</p>
+  {% else %}
+  <p>Tidak ada data yang cocok dengan mapping.</p>
+  {% endif %}
+
+  {% if result.unmapped %}
+  <div class="import-unmapped">
+    <h3>Output belum diimpor</h3>
+    <p>Periksa kecocokan Capture Hostname, perintah yang didukung, dan mapping interface WAN/uplink. Output di bawah tidak ikut dihitung.</p>
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr><th>Hostname</th><th>Command</th></tr>
+        </thead>
+        <tbody>
+          {% for block in result.unmapped %}
+          <tr><td class="mono">{{ block.host }}</td><td class="mono">{{ block.command }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+</section>
+{% endif %}
+{% endblock %}

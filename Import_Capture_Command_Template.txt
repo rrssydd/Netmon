@@ -1,0 +1,45 @@
+NETMON V7 - PANDUAN COMMAND IMPORT CAPTURE
+
+Menu Import Capture menyediakan dua pilihan: Cisco IOS dan Cisco IOS XE. Tombol Salin command
+dan Unduh .txt menghasilkan command saja, tanpa prompt, placeholder, atau catatan. File ini adalah
+panduan; jangan paste isi panduan ini secara keseluruhan ke terminal perangkat.
+
+CISCO IOS - ROUTER ATAU SWITCH
+Profile Netmon: classic_ios.
+
+terminal length 0
+show processes cpu | include utilization
+show processes cpu history
+show memory statistics
+show interfaces
+
+CISCO IOS XE - ROUTER ATAU SWITCH
+IOS XE digunakan pada keluarga router seperti ISR/ASR dan switch Catalyst yang menjalankan IOS XE.
+Model dan versi menentukan command platform yang tersedia. Profile Netmon: platform_xe.
+
+terminal length 0
+show plat soft stat contr br
+show processes cpu | include utilization
+show processes cpu history
+show interfaces
+
+LANGKAH PENGGUNAAN
+1. Pilih kartu sesuai sistem operasi perangkat.
+2. Salin command atau unduh file .txt dari kartu.
+3. Jalankan command pada sesi privileged EXEC (prompt berakhiran #).
+4. Simpan seluruh output terminal sebagai file .txt. File output harus memuat prompt hostname,
+   command, dan hasilnya; file command yang diunduh saja belum berisi metrik.
+5. Impor file output tersebut melalui menu Import Capture.
+
+CATATAN
+- Capture Hostname Netmon harus sama persis dengan hostname pada prompt. Contoh umum: jika prompt
+  menampilkan SW-ACCESS-01, gunakan hostname itu pada field Capture Hostname.
+- Perintah show interfaces mengambil seluruh interface. Netmon mencocokkan setiap bagian output
+  dengan semua mapping WAN/uplink yang dibuat oleh pengguna. Nama link dan interface mengikuti
+  inventori masing-masing, bukan nama bawaan dari template.
+- Command platform IOS XE dapat berbeda menurut model dan versi. Jalankan sesuai perangkat.
+- Traffic interface yang ditampilkan biasanya merupakan rata-rata interval 5 menit.
+- Jangan gunakan show run untuk Import Capture. Hindari menyertakan password atau konfigurasi
+  sensitif dalam file output.
+- Waktu sampel capture dicatat ketika file diimpor. Peak Traffic Harian Overview memakai koleksi
+  SSH live saja.

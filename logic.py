@@ -1,6 +1,7 @@
 """Business logic layer — sits between the Flask routes and
 db.py/netmon/*. Keeps app.py mostly just HTTP plumbing.
 """
+import difflib
 import json
 import os
 from datetime import datetime, timedelta
@@ -14,8 +15,13 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
 def load_thresholds() -> dict:
-    with open(os.path.join(BASE_DIR, "config", "thresholds.yaml")) as f:
-        return yaml.safe_load(f)
+    config_dir = os.path.join(BASE_DIR, "config")
+    local_path = os.path.join(config_dir, "thresholds.yaml")
+    # A clone intentionally has no machine-specific config. Use the tracked
+    # safe defaults until the operator creates a local thresholds.yaml.
+    path = local_path if os.path.exists(local_path) else os.path.join(config_dir, "thresholds.example.yaml")
+    with open(path, encoding="utf-8") as f:
+        return yaml.safe_load(f) or {}
 
 
 def classify(value, warn, crit) -> str:
@@ -96,6 +102,16 @@ def _iface_key(s: str) -> str:
     return m.group(0) if m else s.strip().lower()
 
 
+def _is_all_interfaces_command(command: str) -> bool:
+    normalized = " ".join(command.strip().lower().split())
+    return normalized in {"show interfaces", "show int", "sh interfaces", "sh int"}
+
+
+def _is_terminal_paging_command(command: str) -> bool:
+    normalized = " ".join(command.strip().lower().split())
+    return normalized in {"terminal length 0", "term length 0", "term len 0"}
+
+
 def run_capture_import(text: str) -> dict:
     """Parses a pasted-capture text blob, matches against devices'
     capture_hostname / wan_links' interface, writes metrics. Returns a
@@ -110,33 +126,43 @@ def run_capture_import(text: str) -> dict:
     hosts_seen = {}
     for b in blocks:
         h = hosts_seen.setdefault(b["host"], {"cpu_platform": None, "cpu_line": None, "cpu_hist": None,
-                                               "mem_pct": None, "port_down": False, "port_details": None, "matched": False})
+                                               "mem_pct": None, "port_down": False, "port_details": None,
+                                               "matched": False, "commands": []})
         cmd = b["command"]
         if "plat soft stat contr br" in cmd:
             stats = parsers.parse_platform_stats(b["raw"])
             h["cpu_platform"], h["mem_pct"] = stats["cpu_max_pct"], stats["memory_pct"]
             h["matched"] = True
+            h["commands"].append((b["host"], cmd))
         elif ("processes cpu" in cmd or "proc cpu" in cmd) and "history" in cmd:
             hist = [v for v in parsers.parse_cpu_history_minutes(b["raw"]) if v is not None]
             if hist:
                 h["cpu_hist"] = hist
                 h["matched"] = True
+                h["commands"].append((b["host"], cmd))
         elif ("processes cpu" in cmd or "proc cpu" in cmd) and "history" not in cmd:
             cpu = parsers.parse_cpu_utilization(b["raw"])
             h["cpu_line"] = cpu["one_min"]
             h["matched"] = True
+            h["commands"].append((b["host"], cmd))
         elif "memory statistics" in cmd:
             mem = parsers.parse_memory_statistics(b["raw"])
             h["mem_pct"] = mem["used_pct"]
             h["matched"] = True
+            h["commands"].append((b["host"], cmd))
         elif "interface" in cmd and "status" in cmd:
             ports = parsers.parse_interface_status(b["raw"])
             h["port_down"] = parsers.any_port_down(ports)
             h["port_details"] = ports or None
             h["matched"] = True
+            h["commands"].append((b["host"], cmd))
 
     imported = []
-    matched_block_keys = set()
+    imported_details = []
+    matched_block_keys = {
+        (b["host"], b["command"])
+        for b in blocks if _is_terminal_paging_command(b["command"])
+    }
 
     for host, metrics in hosts_seen.items():
         device = host_to_device.get(host)
@@ -145,6 +171,7 @@ def run_capture_import(text: str) -> dict:
         cpu_platform = metrics.pop("cpu_platform")
         cpu_line = metrics.pop("cpu_line")
         cpu_hist = metrics.pop("cpu_hist")
+        matched_commands = metrics.pop("commands")
         if cpu_hist:
             metrics["cpu_max"] = cpu_hist[-1]
             metrics["cpu_peak"] = max(cpu_hist)
@@ -153,7 +180,20 @@ def run_capture_import(text: str) -> dict:
             metrics["cpu_peak"] = None
         db.insert_metric("device", device["report_group"], "capture", **metrics)
         imported.append(device["report_group"])
-        matched_block_keys.add(host)
+        imported_details.append({
+            "kind": "Perangkat",
+            "label": device["report_group"],
+            "hostname": host,
+            "cpu_current": metrics["cpu_max"],
+            "cpu_peak": metrics["cpu_peak"],
+            "memory_pct": metrics["mem_pct"],
+            "interface": None,
+            "input_mbps": None,
+            "output_mbps": None,
+            "link_state": None,
+            "protocol_state": None,
+        })
+        matched_block_keys.update(matched_commands)
 
     for link in wan_links:
         device = db.get_device(link["device_id"])
@@ -165,22 +205,63 @@ def run_capture_import(text: str) -> dict:
              and _iface_key(b["command"]) == link_key),
             None,
         )
+        interface_raw = None
+        if block:
+            interface_raw = block["raw"]
+        else:
+            for candidate in blocks:
+                if candidate["host"] != capture_host or not _is_all_interfaces_command(candidate["command"]):
+                    continue
+                section = next(
+                    (item for item in parsers.split_interface_sections(candidate["raw"])
+                     if _iface_key(item["interface"]) == link_key),
+                    None,
+                )
+                if section:
+                    block = candidate
+                    interface_raw = section["raw"]
+                    break
         if not block:
             continue
-        rate = parsers.parse_interface_rate(block["raw"])
+        rate = parsers.parse_interface_rate(interface_raw)
         db.insert_metric("wan", link["label"], "capture",
                           input_mbps=rate["input_mbps"], output_mbps=rate["output_mbps"])
         imported.append(link["label"])
+        imported_details.append({
+            "kind": "WAN / uplink",
+            "label": link["label"],
+            "hostname": block["host"],
+            "cpu_current": None,
+            "cpu_peak": None,
+            "memory_pct": None,
+            "interface": link["interface"],
+            "input_mbps": rate["input_mbps"],
+            "output_mbps": rate["output_mbps"],
+            "link_state": rate["link_state"],
+            "protocol_state": rate["proto_state"],
+        })
         matched_block_keys.add((block["host"], block["command"]))
 
     unmapped = []
     for b in blocks:
-        key_host = b["host"] in matched_block_keys
-        key_pair = (b["host"], b["command"]) in matched_block_keys
-        if not key_host and not key_pair:
+        if (b["host"], b["command"]) not in matched_block_keys and not _is_terminal_paging_command(b["command"]):
             unmapped.append(b)
 
-    return {"imported": imported, "unmapped": unmapped}
+    known_capture_hosts = sorted(host_to_device)
+    captured_hosts = sorted({b["host"] for b in blocks})
+    hostname_mismatches = []
+    for host in captured_hosts:
+        if host in host_to_device:
+            continue
+        suggestions = difflib.get_close_matches(host, known_capture_hosts, n=1, cutoff=0.55)
+        hostname_mismatches.append({"captured": host, "suggestion": suggestions[0] if suggestions else None})
+
+    return {
+        "imported": imported,
+        "details": imported_details,
+        "unmapped": unmapped,
+        "hostname_mismatches": hostname_mismatches,
+    }
 
 
 # ---------------------------------------------------------------------------

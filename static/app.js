@@ -16,7 +16,53 @@ document.querySelectorAll('[data-menu]').forEach(button=>button.addEventListener
   document.querySelector('.mobile-toggle')?.setAttribute('aria-expanded',String(open));
 }));
 document.addEventListener('keydown',e=>{if(e.key==='Escape'){document.body.classList.remove('menu-open');document.querySelector('.mobile-toggle')?.setAttribute('aria-expanded','false')}});
-document.querySelectorAll('form[data-confirm]').forEach(form=>form.addEventListener('submit',e=>{if(!confirm(form.dataset.confirm))e.preventDefault()}));
+function createConfirmDialog(){
+ const dialog=document.createElement('dialog');
+ dialog.className='confirm-dialog';
+ dialog.setAttribute('role','alertdialog');
+ dialog.setAttribute('aria-labelledby','confirm-dialog-title');
+ dialog.setAttribute('aria-describedby','confirm-dialog-message');
+ dialog.innerHTML='<div class="confirm-card"><span class="confirm-symbol" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M10 11v6m4-6v6M5 7l1 14h12l1-14M9 7V4h6v3"/></svg></span><div class="confirm-copy"><span class="eyebrow">KONFIRMASI</span><h2 id="confirm-dialog-title">Lanjutkan tindakan?</h2><p id="confirm-dialog-message"></p></div><div class="confirm-actions"><button type="button" class="button confirm-cancel">Batal</button><button type="button" class="button primary confirm-proceed">Lanjutkan</button></div></div>';
+ document.body.appendChild(dialog);
+ dialog.querySelector('.confirm-cancel').addEventListener('click',()=>dialog.close('cancel'));
+ dialog.querySelector('.confirm-proceed').addEventListener('click',()=>dialog.close('confirm'));
+ dialog.addEventListener('click',event=>{if(event.target===dialog)dialog.close('cancel')});
+ return dialog;
+}
+const confirmDialog=createConfirmDialog();
+function askConfirmation({title,message,action}){
+ confirmDialog.querySelector('#confirm-dialog-title').textContent=title||'Konfirmasi tindakan';
+ confirmDialog.querySelector('#confirm-dialog-message').textContent=message||'Lanjutkan tindakan ini?';
+ const actionButton=confirmDialog.querySelector('.confirm-proceed');
+ actionButton.textContent=action||'Lanjutkan';
+ const destructive=/hapus|delete/i.test(action||title||'');
+ confirmDialog.classList.toggle('is-destructive',destructive);
+ actionButton.classList.toggle('danger',destructive);
+ const previousFocus=document.activeElement;
+ return new Promise(resolve=>{
+  confirmDialog.addEventListener('close',()=>{
+   resolve(confirmDialog.returnValue==='confirm');
+   if(previousFocus?.isConnected)previousFocus.focus({preventScroll:true});
+  },{once:true});
+  confirmDialog.showModal();
+  confirmDialog.querySelector('.confirm-cancel').focus();
+ });
+}
+document.querySelectorAll('form[data-confirm]').forEach(form=>form.addEventListener('submit',async event=>{
+ if(form.dataset.confirmBypass==='true'){delete form.dataset.confirmBypass;return}
+ event.preventDefault();
+ const accepted=await askConfirmation({title:form.dataset.confirmTitle,message:form.dataset.confirm,action:form.dataset.confirmAction});
+ if(!accepted)return;
+ form.dataset.confirmBypass='true';
+ if(event.submitter)form.requestSubmit(event.submitter);else form.requestSubmit();
+}));
+document.querySelectorAll('.notice').forEach(notice=>{
+ if(notice.classList.contains('error')){notice.setAttribute('role','alert');notice.setAttribute('aria-live','assertive')}
+ else{notice.setAttribute('role','status');notice.setAttribute('aria-live','polite')}
+ const close=document.createElement('button');close.type='button';close.className='notice-dismiss';close.setAttribute('aria-label','Tutup pemberitahuan');close.textContent='×';
+ close.addEventListener('click',()=>{notice.classList.add('notice-closing');notice.addEventListener('animationend',()=>notice.remove(),{once:true})});
+ notice.appendChild(close);
+});
 document.querySelectorAll('form[data-collect]').forEach(form=>form.addEventListener('submit',()=>{
   const button=form.querySelector('button');button.disabled=true;button.querySelector('span').textContent='Collecting…';
   document.querySelector('.collect-progress').hidden=false;
@@ -36,6 +82,33 @@ if(input&&drop){
  drop.addEventListener('drop',e=>{if(e.dataTransfer.files.length){const transfer=new DataTransfer();transfer.items.add(e.dataTransfer.files[0]);input.files=transfer.files;update()}});
  document.getElementById('clear-capture').addEventListener('click',()=>{input.value='';update();input.focus()});
 }
+function captureTemplateText(id){
+ const template=document.querySelector(`[data-capture-template="${id}"]`);
+ return template?.textContent.trim()||'';
+}
+function setTemplateMessage(id,text){
+ const message=document.querySelector(`[data-template-message="${id}"]`);
+ if(message)message.textContent=text;
+}
+document.querySelectorAll('[data-template-copy]').forEach(button=>button.addEventListener('click',async()=>{
+ const id=button.dataset.templateCopy,text=captureTemplateText(id);
+ if(!text){setTemplateMessage(id,'Template tidak tersedia.');return}
+ try{
+  if(navigator.clipboard?.writeText)await navigator.clipboard.writeText(text);
+  else{
+   const field=document.createElement('textarea');field.value=text;field.setAttribute('readonly','');field.style.position='fixed';field.style.opacity='0';document.body.appendChild(field);field.select();
+   const copied=document.execCommand('copy');field.remove();if(!copied)throw new Error('copy failed');
+  }
+  setTemplateMessage(id,'Command berhasil disalin.');
+ }catch(error){setTemplateMessage(id,'Gagal menyalin. Pilih dan salin teks template secara manual.');}
+}));
+document.querySelectorAll('[data-template-download]').forEach(button=>button.addEventListener('click',()=>{
+ const id=button.dataset.templateDownload,text=captureTemplateText(id);
+ if(!text){setTemplateMessage(id,'Template tidak tersedia.');return}
+ const blob=new Blob([text+'\n'],{type:'text/plain;charset=utf-8'}),url=URL.createObjectURL(blob),link=document.createElement('a');
+ link.href=url;link.download=button.dataset.filename||`netmon_capture_${id}.txt`;document.body.appendChild(link);link.click();link.remove();URL.revokeObjectURL(url);
+ setTemplateMessage(id,'File command berhasil diunduh.');
+}));
 const captureForm=document.querySelector('[data-capture-form]');
 if(captureForm){
  captureForm.addEventListener('submit',()=>{const b=captureForm.querySelector('button[type="submit"]');b.disabled=true;b.querySelector('span').textContent='Mengambil config…';document.querySelector('.capture-progress').hidden=false});

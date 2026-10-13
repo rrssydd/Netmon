@@ -374,6 +374,17 @@ def download_config(capture_id):
                      as_attachment=True, download_name=f'{name}_show-run_{stamp}_{capture_id}.txt')
 
 
+@app.post('/capture-device/<int:capture_id>/delete')
+def delete_config(capture_id):
+    capture = db.get_config_capture(capture_id)
+    if not capture:
+        abort(404)
+    if not db.delete_config_capture(capture_id):
+        abort(404)
+    flash(f"Backup {capture['device_name']} berhasil dihapus.", 'success')
+    return redirect(url_for('capture_device'))
+
+
 @app.get('/api/local-status')
 def local_status():
     return jsonify(status='online', mode='local')
@@ -384,10 +395,15 @@ def history():
     thresholds = logic.load_thresholds()
     daily = thresholds.get('daily_report', {})
     wan_limit = daily.get('mbps_limit', thresholds.get('wan_link', {}).get('mbps_warning', 300))
+    device_limits = thresholds.get('router_switch', {})
     entities = db.history_entities()
     return render_template('history.html', entities=entities,
                            selected_label=request.args.get('label'), active='history',
                            wan_limit=wan_limit,
+                           cpu_warning=device_limits.get('cpu_warning', 80),
+                           cpu_critical=device_limits.get('cpu_critical', 90),
+                           mem_warning=device_limits.get('mem_warning', 80),
+                           mem_critical=device_limits.get('mem_critical', 90),
                            device_count=sum(e['entity_type'] == 'device' for e in entities),
                            wan_count=sum(e['entity_type'] == 'wan' for e in entities))
 

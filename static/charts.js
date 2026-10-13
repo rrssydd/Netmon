@@ -125,8 +125,11 @@ function makeChart(canvas, points, type, compact, chartConfig = {}) {
         pointRadius: points.length < 3 ? 3 : 0,
         pointHoverRadius: 5,
         pointHitRadius: 14,
-        tension: .3,
-        cubicInterpolationMode: 'monotone',
+        // Improve line continuity for display only; source samples remain unchanged.
+        tension: .35,
+        cubicInterpolationMode: 'default',
+        borderCapStyle: 'round',
+        borderJoinStyle: 'round',
         fill: 'origin',
         spanGaps: false,
       })),

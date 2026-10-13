@@ -1,0 +1,16 @@
+# Safe defaults for a fresh clone. Copy to thresholds.yaml to customize locally.
+
+router_switch:
+  cpu_warning: 80
+  cpu_critical: 90
+  mem_warning: 80
+  mem_critical: 90
+
+wan_link:
+  mbps_warning: 300
+  mbps_critical: 800
+
+# Period uses the local clock on the computer running Netmon.
+daily_report:
+  start_time: "08:00"
+  mbps_limit: 300

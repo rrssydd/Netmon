@@ -328,3 +328,14 @@ def list_config_captures(device_id=None):
         return [dict(row) for row in rows]
     finally:
         conn.close()
+
+
+def delete_config_capture(capture_id):
+    """Delete one saved running-config backup without touching device metrics."""
+    conn = get_conn()
+    try:
+        with conn:
+            cursor = conn.execute('DELETE FROM config_captures WHERE id=?', (capture_id,))
+            return cursor.rowcount == 1
+    finally:
+        conn.close()

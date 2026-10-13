@@ -131,7 +131,7 @@ def any_port_down(ports: list) -> bool:
 
 # ---------------------------------------------------------------------------
 # WAN/uplink bandwidth + link status
-# Matches: show interfaces <if>
+# Matches one 'show interfaces <if>' response or a section from 'show interfaces'.
 # ---------------------------------------------------------------------------
 _LINK_STATE_RE = re.compile(
     r"is (?P<state>up|down|administratively down),\s*line protocol is (?P<proto>up|down)"
@@ -152,6 +152,26 @@ def parse_interface_rate(raw: str) -> dict:
         "input_mbps": round(int(rate_m.group("in_bps")) / 1_000_000, 1) if rate_m else None,
         "output_mbps": round(int(rate_m.group("out_bps")) / 1_000_000, 1) if rate_m else None,
     }
+
+
+_INTERFACE_HEADER_RE = re.compile(
+    r"^(?P<interface>[A-Za-z][\w/.:_-]*)\s+is\s+"
+    r"(?:administratively down|up|down),\s*line protocol is\s+(?:up|down)\b",
+    re.MULTILINE | re.IGNORECASE,
+)
+
+
+def split_interface_sections(raw: str) -> list:
+    """Split a full 'show interfaces' response into per-interface sections."""
+    headers = list(_INTERFACE_HEADER_RE.finditer(raw))
+    sections = []
+    for index, header in enumerate(headers):
+        end = headers[index + 1].start() if index + 1 < len(headers) else len(raw)
+        sections.append({
+            "interface": header.group("interface"),
+            "raw": raw[header.start():end],
+        })
+    return sections
 
 
 # ---------------------------------------------------------------------------
